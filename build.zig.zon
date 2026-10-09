@@ -9,6 +9,5 @@
     },
     .minimum_zig_version = "0.17.0",
     .paths = .{""},
-    .fingerprint = 0x1e511513c24a78e2
-,
+    .fingerprint = 0x1e511513c24a78e2,
 }
