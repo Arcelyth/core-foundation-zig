@@ -4,6 +4,9 @@ const c = @import("c");
 const types = @import("types.zig");
 const Options = types.Options;
 const Orientation = types.Orientation;
+const UiFontType = types.UiFontType;
+const SymbolicTraits = types.SymbolicTraits;
+const CTFontDescriptor = @import("CTFontDescriptor.zig");
 
 pub const CTFontRef = std.meta.Child(c.CTFontRef);
 
@@ -43,6 +46,63 @@ pub fn initWithNameAndOptions(name: []const u8, size: f64, options: Options) Str
         @backingInt(options),
     ));
 }
+
+pub fn initWithDescriptor(desc: CTFontDescriptor, size: f64) CTFont {
+    return fromRef(c.CTFontCreateWithFontDescriptor(desc.ref, size, null));
+}
+
+pub fn initWithDescriptorAndOptions(desc: CTFontDescriptor, size: f64, options: Options) CTFont {
+    return fromRef(c.CTFontCreateWithFontDescriptorAndOptions(
+        desc.ref,
+        size,
+        null,
+        @backingInt(options),
+    ));
+}
+
+pub fn initUiFontForLanguage(ui_type: UiFontType, size: f64, language: ?[]const u8) StringError!CTFont {
+    const string = if (language) |value| try toCFString(value) else null;
+    defer if (string) |value| c.CFRelease(value);
+
+    return fromRef(c.CTFontCreateUIFontForLanguage(@backingInt(ui_type), size, string));
+}
+
+pub fn initCopyWithAttributes(font: CTFont, size: f64, attributes: ?CTFontDescriptor) CTFont {
+    return fromRef(c.CTFontCreateCopyWithAttributes(font.ref, size, attributes));
+}
+
+pub fn initCopyWithSymbolicTraits(
+    font: CTFont,
+    size: f64,
+    sym_trait_value: SymbolicTraits,
+    sym_trait_mask: SymbolicTraits,
+) CTFont {
+    return fromRef(c.CTFontCreateCopyWithSymbolicTraits(
+        font.ref,
+        size,
+        @backingInt(sym_trait_value),
+        @backingInt(sym_trait_mask),
+    ));
+}
+
+pub fn initCopyWithFamily(
+    font: CTFont,
+    size: f64,
+    family: []const u8,
+) StringError!?CTFont {
+    const string = try toCFString(family);
+    defer c.CFRelease(string);
+
+    return fromRef(c.CTFontCreateCopyWithFamily(
+        font.ref,
+        size,
+        string,
+    ) orelse return null);
+}
+
+// TODO: need core foundation
+pub fn initForString() void {}
+pub fn initForStringWithLanguage() void {}
 
 pub fn toCFString(bytes: []const u8) StringError!c.CFStringRef {
     if (!std.unicode.utf8ValidateSlice(bytes))
