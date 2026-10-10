@@ -15,6 +15,10 @@ const toCFString = cf_string.toCFString;
 const cf_index = cf.index;
 const CFIndex = cf_index.CFIndex;
 const toCFIndex = cf_index.toCFIndex;
+const CFRange = cf.range.CFRange;
+const CFArray = cf.array.CFArray;
+const CFDictionary = cf.dictionary.CFDictionary;
+const CGAffineTransform = cf.affine.CGAffineTransform;
 
 pub const CTFontRef = std.meta.Child(c.CTFontRef);
 
@@ -70,7 +74,12 @@ pub fn initUiFontForLanguage(ui_type: UiFontType, size: f64, language: ?[]const 
 }
 
 pub fn initCopyWithAttributes(font: CTFont, size: f64, attributes: ?CTFontDescriptor) CTFont {
-    return fromRef(c.CTFontCreateCopyWithAttributes(font.ref, size, attributes));
+    return fromRef(c.CTFontCreateCopyWithAttributes(
+        font.ref,
+        size,
+        null,
+        if (attributes) |descriptor| descriptor.ref else null,
+    ));
 }
 
 pub fn initCopyWithSymbolicTraits(
@@ -82,6 +91,7 @@ pub fn initCopyWithSymbolicTraits(
     return fromRef(c.CTFontCreateCopyWithSymbolicTraits(
         font.ref,
         size,
+        null,
         @backingInt(sym_trait_value),
         @backingInt(sym_trait_mask),
     ));
@@ -98,19 +108,44 @@ pub fn initCopyWithFamily(
     return fromRef(c.CTFontCreateCopyWithFamily(
         font.ref,
         size,
+        null,
         string,
     ) orelse return null);
 }
 
-// TODO: need core foundation
-pub fn initForString() void {}
-pub fn initForStringWithLanguage() void {}
+pub fn initForString(font: CTFont, text: []const u8, range: CFRange) StringError!CTFont {
+    const string = try toCFString(text);
+    defer cf.release(string);
 
-pub fn copyFontDescriptor(font: CTFont) CTFontDescriptor {
-    return c.CTFontCopyFontDescriptor(font.ref);
+    return fromRef(c.CTFontCreateForString(font.ref, string, range));
 }
 
-pub fn copyFontAttribute(font: CTFont, attribute: []const u8) CTFontDescriptor {
+pub fn initForStringWithLanguage(
+    font: CTFont,
+    text: []const u8,
+    range: CFRange,
+    language: ?[]const u8,
+) StringError!CTFont {
+    const string = try toCFString(text);
+    defer cf.release(string);
+    const language_string = if (language) |value| try toCFString(value) else null;
+    defer if (language_string) |value| cf.release(value);
+
+    return fromRef(c.CTFontCreateForStringWithLanguage(
+        font.ref,
+        string,
+        range,
+        language_string,
+    ));
+}
+
+pub fn copyFontDescriptor(font: CTFont) CTFontDescriptor {
+    return .{
+        .ref = c.CTFontCopyFontDescriptor(font.ref) orelse @panic("Attempt to create a null object."),
+    };
+}
+
+pub fn copyFontAttribute(font: CTFont, attribute: []const u8) StringError!CTFontDescriptor {
     const string = try toCFString(attribute);
     defer cf.release(string);
 
@@ -121,22 +156,56 @@ pub fn getSize(font: CTFont) f64 {
     return c.CTFontGetSize(font.ref);
 }
 
-// TODO: need core foundation
-pub fn getMatrix() void {}
-
-pub fn getSymbolicTraits(font: CTFont) SymbolicTraits {
-    return c.CTFontGetSymbolicTraits(font.ref);
+pub fn getMatrix(font: CTFont) CGAffineTransform {
+    return c.CTFontGetMatrix(font.ref);
 }
 
-// TODO: need core foundation
-pub fn copyTraits() void {}
-pub fn copyDefaultCascadeListForLanguage() void {}
+pub fn getSymbolicTraits(font: CTFont) SymbolicTraits {
+    return @fromBackingInt(c.CTFontGetSymbolicTraits(font.ref));
+}
 
-test "core_text CTFont: initial with name" {
-    const font = try CTFont.initWithName("Helvetica", 16.0);
+pub fn copyTraits(font: CTFont) CFDictionary {
+    return c.CTFontCopyTraits(font.ref);
+}
+
+pub fn copyDefaultCascadeListForLanguage(font: CTFont, languages: CFArray) CFArray {
+    return c.CTFontCopyDefaultCascadeListForLanguages(font.ref, languages);
+}
+
+test "core_text CTFont: constructors" {
+    const f = try CTFont.initWithName("Helvetica", 16.0);
+    defer cf.release(f.ref);
+
+    const font = try initWithNameAndOptions("Helvetica", 16, .{ .prevent_auto_activation = true });
     defer cf.release(font.ref);
+    const descriptor = font.copyFontDescriptor();
+    defer cf.release(descriptor.ref);
 
-    try std.testing.expect(c.CTFontGetSize(font.ref) == 16.0);
-    try std.testing.expect(c.CTFontGetAscent(font.ref) > 0.0);
-    try std.testing.expect(c.CTFontGetDescent(font.ref) >= 0.0);
+    const described = initWithDescriptor(descriptor, 20);
+    defer cf.release(described.ref);
+    try std.testing.expectEqual(@as(f64, 20), described.getSize());
+    const with_options = initWithDescriptorAndOptions(descriptor, 24, .{});
+    defer cf.release(with_options.ref);
+    try std.testing.expectEqual(@as(f64, 24), with_options.getSize());
+
+    const resized = initCopyWithAttributes(font, 32, null);
+    defer cf.release(resized.ref);
+    try std.testing.expectEqual(@as(f64, 32), resized.getSize());
+    const with_attributes = initCopyWithAttributes(font, 0, descriptor);
+    defer cf.release(with_attributes.ref);
+    try std.testing.expectEqual(font.getSize(), with_attributes.getSize());
+
+    const bold = initCopyWithSymbolicTraits(font, 0, .{ .bold = true }, .{ .bold = true });
+    defer cf.release(bold.ref);
+    try std.testing.expect(bold.getSymbolicTraits().bold);
+    const family = (try initCopyWithFamily(font, 18, "Helvetica")) orelse return error.NoFont;
+    defer cf.release(family.ref);
+    try std.testing.expectEqual(@as(f64, 18), family.getSize());
+
+    const ui_font = try initUiFontForLanguage(.system, 14, "en");
+    defer cf.release(ui_font.ref);
+    try std.testing.expectEqual(@as(f64, 14), ui_font.getSize());
+    const default_ui_font = try initUiFontForLanguage(.system, 14, null);
+    defer cf.release(default_ui_font.ref);
+    try std.testing.expectEqual(@as(f64, 14), default_ui_font.getSize());
 }
