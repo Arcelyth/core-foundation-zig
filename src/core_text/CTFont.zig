@@ -18,11 +18,20 @@ const toCFIndex = cf_index.toCFIndex;
 const CFRange = cf.range.CFRange;
 const CFArray = cf.array.CFArray;
 const CFDictionary = cf.dictionary.CFDictionary;
-const CGAffineTransform = cf.affine.CGAffineTransform;
 const CFCharacterSet = cf.character_set.CFCharacterSet;
 const CFStringEncoding = cf_string.CFStringEncoding;
 const cg = @import("../core_graphics.zig");
 const CGRect = cg.geometry.CGRect;
+const CGAffineTransform = cg.geometry.CGAffineTransform;
+const CGSize = cg.geometry.CGSize;
+const CGGlyph = cg.types.CGGlyph;
+const CGFont = cg.types.CGFont;
+const CGPath = cg.types.CGPath;
+const CGContext = cg.types.CGContext;
+const CGPoint = cg.geometry.CGPoint;
+const CFData = cf.data.CFData;
+const TableTag = types.TableTag;
+const TableOptions = types.TableOptions;
 
 pub const CTFontRef = std.meta.Child(c.CTFontRef);
 
@@ -270,6 +279,188 @@ pub fn getCapHeight(font: CTFont) f64 {
 
 pub fn getXHeight(font: CTFont) f64 {
     return c.CTFontGetXHeight(font.ref);
+}
+
+pub fn createPathForGlyph(font: CTFont, glyph: CGGlyph, matrix: ?*const CGAffineTransform) CGPath {
+    return c.CTFontCreatePathForGlyph(font.ref, glyph, matrix);
+}
+
+pub fn getGlyphWithName(font: CTFont, name: []const u8) StringError!CGGlyph {
+    const string = try toCFString(name);
+    defer cf.release(string);
+
+    return c.CTFontGetGlyphWithName(font.ref, string);
+}
+
+pub fn copyNameForGlyph(font: CTFont, glyph: CGGlyph) CFString {
+    return c.CTFontCopyNameForGlyph(font.ref, glyph);
+}
+
+pub fn getBoundingRectsForGlyphs(
+    font: CTFont,
+    orientation: Orientation,
+    glyphs: []const CGGlyph,
+    rects: ?[]CGRect,
+) CGRect {
+    if (rects) |out| std.debug.assert(out.len >= glyphs.len);
+
+    return c.CTFontGetBoundingRectsForGlyphs(
+        font.ref,
+        @backingInt(orientation),
+        glyphs.ptr,
+        if (rects) |out| out.ptr else null,
+        @intCast(glyphs.len),
+    );
+}
+
+pub fn getAdvancesForGlyphs(
+    font: CTFont,
+    orientation: Orientation,
+    glyphs: []const CGGlyph,
+    advances: ?[]CGSize,
+) f64 {
+    if (advances) |out| std.debug.assert(out.len >= glyphs.len);
+
+    return c.CTFontGetAdvancesForGlyphs(
+        font.ref,
+        @backingInt(orientation),
+        glyphs.ptr,
+        if (advances) |out| out.ptr else null,
+        @intCast(glyphs.len),
+    );
+}
+
+pub fn getOpticalBoundsForGlyphs(font: CTFont, glyphs: []const CGGlyph, rects: ?[]CGRect) CGRect {
+    if (rects) |out| std.debug.assert(out.len >= glyphs.len);
+
+    return c.CTFontGetOpticalBoundsForGlyphs(
+        font.ref,
+        glyphs.ptr,
+        if (rects) |out| out.ptr else null,
+        @intCast(glyphs.len),
+        0,
+    );
+}
+
+pub fn getVerticalTranslationsForGlyphs(font: CTFont, glyphs: []const CGGlyph, translations: []CGSize) void {
+    std.debug.assert(translations.len >= glyphs.len);
+    if (glyphs.len == 0) return;
+    c.CTFontGetVerticalTranslationsForGlyphs(font.ref, glyphs.ptr, translations.ptr, @intCast(glyphs.len));
+}
+
+// Working With Font Variations
+
+pub fn copyVariationAxes(font: CTFont) CFArray {
+    return c.CTFontCopyVariationAxes(font.ref);
+}
+
+pub fn copyVariation(font: CTFont) CFDictionary {
+    return c.CTFontCopyVariation(font.ref);
+}
+
+// Getting Font Features
+
+pub fn copyFeatures(font: CTFont) CFArray {
+    return c.CTFontCopyFeatures(font.ref);
+}
+
+pub fn copyFeatureSettings(font: CTFont) CFArray {
+    return c.CTFontCopyFeatureSettings(font.ref);
+}
+
+// Working With Glyphs
+
+pub fn getGlyphsForCharacters(font: CTFont, characters: []const u16, glyphs: []CGGlyph) bool {
+    std.debug.assert(glyphs.len >= characters.len);
+    if (characters.len == 0) return true;
+
+    return c.CTFontGetGlyphsForCharacters(font.ref, characters.ptr, glyphs.ptr, @intCast(characters.len));
+}
+
+pub fn drawGlyphs(
+    font: CTFont,
+    glyphs: []const CGGlyph,
+    positions: []const CGPoint,
+    context: CGContext,
+) void {
+    std.debug.assert(positions.len >= glyphs.len);
+    if (glyphs.len == 0) return;
+    c.CTFontDrawGlyphs(font.ref, glyphs.ptr, positions.ptr, glyphs.len, context);
+}
+
+/// Null queries the count; the returned count may exceed the output capacity.
+pub fn getLigatureCaretPositions(font: CTFont, glyph: CGGlyph, positions: ?[]f64) CFIndex {
+    const count = if (positions) |out| out.len else 0;
+
+    return c.CTFontGetLigatureCaretPositions(
+        font.ref,
+        glyph,
+        if (positions) |out| (if (out.len == 0) null else out.ptr) else null,
+        @intCast(count),
+    );
+}
+
+// Converting Fonts
+
+pub fn copyGraphicsFont(font: CTFont, attributes: ?*?CTFontDescriptor) CGFont {
+    var reference: c.CTFontDescriptorRef = null;
+    const graphics_font = c.CTFontCopyGraphicsFont(font.ref, if (attributes != null) &reference else null);
+    if (attributes) |out| out.* = if (reference) |value| .{ .ref = value } else null;
+
+    return graphics_font;
+}
+
+pub fn initWithGraphicsFont(
+    graphics_font: CGFont,
+    size: f64,
+    matrix: ?*const CGAffineTransform,
+    attributes: ?CTFontDescriptor,
+) CTFont {
+    return fromRef(c.CTFontCreateWithGraphicsFont(
+        graphics_font,
+        size,
+        matrix,
+        if (attributes) |descriptor| descriptor.ref else null,
+    ));
+}
+
+// Getting Font Table Data
+
+pub fn copyAvailableTables(font: CTFont, options: TableOptions) CFArray {
+    return c.CTFontCopyAvailableTables(font.ref, @backingInt(options));
+}
+
+pub fn copyTable(font: CTFont, tag: TableTag, options: TableOptions) CFData {
+    return c.CTFontCopyTable(font.ref, tag, @backingInt(options));
+}
+
+pub fn hasTable(font: CTFont, tag: TableTag) bool {
+    return c.CTFontHasTable(font.ref, tag);
+}
+
+// Getting Font Identifiers
+
+pub fn getTypeID() cf.CFTypeID {
+    return c.CTFontGetTypeID();
+}
+
+pub fn getUiFontType(font: CTFont) UiFontType {
+    return @fromBackingInt(c.CTFontGetUIFontType(font.ref));
+}
+
+// Adaptive Images
+
+pub fn getTypographicBoundsForAdaptiveImageProvider(font: CTFont, provider: cf.CFType) CGRect {
+    return c.CTFontGetTypographicBoundsForAdaptiveImageProvider(font.ref, provider);
+}
+
+pub fn drawImageFromAdaptiveImageProviderAtPoint(
+    font: CTFont,
+    provider: cf.CFType,
+    point: CGPoint,
+    context: CGContext,
+) void {
+    c.CTFontDrawImageFromAdaptiveImageProviderAtPoint(font.ref, provider, point, context);
 }
 
 test "core_text CTFont: constructors" {

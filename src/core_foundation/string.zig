@@ -2,6 +2,7 @@ const std = @import("std");
 const c = @import("c");
 const toCFIndex = @import("index.zig").toCFIndex;
 pub const CFString = c.CFStringRef;
+pub const CFStringEncoding = c.CFStringEncoding;
 
 pub const StringError = error{
     InvalidUtf8,

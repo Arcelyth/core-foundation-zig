@@ -1,3 +1,5 @@
+const c = @import("c");
+
 pub const Orientation = enum(u32) {
     default = 0,
     horizontal = 1,
@@ -58,3 +60,6 @@ pub const SymbolicTraits = packed struct(u32) {
     _reserved15: u13 = 0,
     stylistic_class: u4 = 0,
 };
+
+pub const TableTag = c.CTFontTableTag;
+pub const TableOptions = u32;
