@@ -16,6 +16,10 @@ pub fn release(object: CFType) void {
     c.CFRelease(object);
 }
 
+pub fn retain(object: CFType) CFType {
+    return c.CFRetain(object);
+}
+
 test {
     @import("std").testing.refAllDecls(@This());
 }
