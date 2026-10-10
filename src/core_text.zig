@@ -1,4 +1,5 @@
 pub const CTFont = @import("core_text/CTFont.zig");
+pub const CTFontDescriptor = @import("core_text/CTFontDescriptor.zig");
 pub const types = @import("core_text/types.zig");
 
 test {
