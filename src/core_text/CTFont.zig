@@ -19,6 +19,10 @@ const CFRange = cf.range.CFRange;
 const CFArray = cf.array.CFArray;
 const CFDictionary = cf.dictionary.CFDictionary;
 const CGAffineTransform = cf.affine.CGAffineTransform;
+const CFCharacterSet = cf.character_set.CFCharacterSet;
+const CFStringEncoding = cf_string.CFStringEncoding;
+const cg = @import("../core_graphics.zig");
+const CGRect = cg.geometry.CGRect;
 
 pub const CTFontRef = std.meta.Child(c.CTFontRef);
 
@@ -29,6 +33,8 @@ pub fn fromRef(reference: c.CTFontRef) CTFont {
         .ref = reference orelse @panic("Attempt to create a null object."),
     };
 }
+
+// Creating Fonts
 
 pub fn initWithName(name: []const u8, size: f64) StringError!CTFont {
     const string = try toCFString(name);
@@ -139,6 +145,8 @@ pub fn initForStringWithLanguage(
     ));
 }
 
+// Getting Font Data
+
 pub fn copyFontDescriptor(font: CTFont) CTFontDescriptor {
     return .{
         .ref = c.CTFontCopyFontDescriptor(font.ref) orelse @panic("Attempt to create a null object."),
@@ -170,6 +178,98 @@ pub fn copyTraits(font: CTFont) CFDictionary {
 
 pub fn copyDefaultCascadeListForLanguage(font: CTFont, languages: CFArray) CFArray {
     return c.CTFontCopyDefaultCascadeListForLanguages(font.ref, languages);
+}
+
+// Getting Font Names
+
+pub fn copyPostScriptName(font: CTFont) CFString {
+    return c.CTFontCopyPostScriptName(font.ref);
+}
+
+pub fn copyFamilyName(font: CTFont) CFString {
+    return c.CTFontCopyFamilyName(font.ref);
+}
+
+pub fn copyFullName(font: CTFont) CFString {
+    return c.CTFontCopyFullName(font.ref);
+}
+
+pub fn copyDisplayName(font: CTFont) CFString {
+    return c.CTFontCopyDisplayName(font.ref);
+}
+
+pub fn copyName(font: CTFont, name_key: []const u8) StringError!CFString {
+    const string = try toCFString(name_key);
+    defer cf.release(string);
+
+    return c.CTFontCopyName(font.ref, string);
+}
+
+pub fn copyLocalizedName(font: CTFont, name_key: []const u8, actual_language: ?*CFString) StringError!CFString {
+    const string = try toCFString(name_key);
+    defer cf.release(string);
+
+    return c.CTFontCopyLocalizedName(font.ref, string, actual_language);
+}
+
+// Working With Encoding
+
+pub fn copyCharacterSet(font: CTFont) CFCharacterSet {
+    return c.CTFontCopyCharacterSet(font.ref);
+}
+
+pub fn getStringEncoding(font: CTFont) CFStringEncoding {
+    return c.CTFontGetStringEncoding(font.ref);
+}
+
+pub fn copySupportedLanguages(font: CTFont) CFArray {
+    return c.CTFontCopySupportedLanguages(font.ref);
+}
+
+// Getting Font Metrics
+
+pub fn getAscent(font: CTFont) f64 {
+    return c.CTFontGetAscent(font.ref);
+}
+
+pub fn getDescent(font: CTFont) f64 {
+    return c.CTFontGetDescent(font.ref);
+}
+
+pub fn getLeading(font: CTFont) f64 {
+    return c.CTFontGetLeading(font.ref);
+}
+
+pub fn getUnitsPerEm(font: CTFont) u32 {
+    return c.CTFontGetUnitsPerEm(font.ref);
+}
+
+pub fn getGlyphCount(font: CTFont) CFIndex {
+    return c.CTFontGetGlyphCount(font.ref);
+}
+
+pub fn getBoundingBox(font: CTFont) CGRect {
+    return c.CTFontGetBoundingBox(font.ref);
+}
+
+pub fn getUnderlinePosition(font: CTFont) f64 {
+    return c.CTFontGetUnderlinePosition(font.ref);
+}
+
+pub fn getUnderlineThickness(font: CTFont) f64 {
+    return c.CTFontGetUnderlineThickness(font.ref);
+}
+
+pub fn getSlantAngle(font: CTFont) f64 {
+    return c.CTFontGetSlantAngle(font.ref);
+}
+
+pub fn getCapHeight(font: CTFont) f64 {
+    return c.CTFontGetCapHeight(font.ref);
+}
+
+pub fn getXHeight(font: CTFont) f64 {
+    return c.CTFontGetXHeight(font.ref);
 }
 
 test "core_text CTFont: constructors" {
