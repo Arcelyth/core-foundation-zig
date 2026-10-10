@@ -7,14 +7,16 @@ const Orientation = types.Orientation;
 const UiFontType = types.UiFontType;
 const SymbolicTraits = types.SymbolicTraits;
 const CTFontDescriptor = @import("CTFontDescriptor.zig");
+const cf = @import("../core_foundation.zig");
+const cf_string = cf.string;
+const CFString = cf_string.CFString;
+const StringError = cf_string.StringError;
+const toCFString = cf_string.toCFString;
+const cf_index = cf.index;
+const CFIndex = cf_index.CFIndex;
+const toCFIndex = cf_index.toCFIndex;
 
 pub const CTFontRef = std.meta.Child(c.CTFontRef);
-
-pub const StringError = error{
-    InvalidUtf8,
-    OutOfMemory,
-    InputTooLong,
-};
 
 ref: CTFontRef,
 
@@ -26,7 +28,7 @@ pub fn fromRef(reference: c.CTFontRef) CTFont {
 
 pub fn initWithName(name: []const u8, size: f64) StringError!CTFont {
     const string = try toCFString(name);
-    defer c.CFRelease(string);
+    defer cf.release(string);
 
     return fromRef(c.CTFontCreateWithName(
         string,
@@ -37,7 +39,7 @@ pub fn initWithName(name: []const u8, size: f64) StringError!CTFont {
 
 pub fn initWithNameAndOptions(name: []const u8, size: f64, options: Options) StringError!CTFont {
     const string = try toCFString(name);
-    defer c.CFRelease(string);
+    defer cf.release(string);
 
     return fromRef(c.CTFontCreateWithNameAndOptions(
         string,
@@ -62,7 +64,7 @@ pub fn initWithDescriptorAndOptions(desc: CTFontDescriptor, size: f64, options: 
 
 pub fn initUiFontForLanguage(ui_type: UiFontType, size: f64, language: ?[]const u8) StringError!CTFont {
     const string = if (language) |value| try toCFString(value) else null;
-    defer if (string) |value| c.CFRelease(value);
+    defer if (string) |value| cf.release(value);
 
     return fromRef(c.CTFontCreateUIFontForLanguage(@backingInt(ui_type), size, string));
 }
@@ -91,7 +93,7 @@ pub fn initCopyWithFamily(
     family: []const u8,
 ) StringError!?CTFont {
     const string = try toCFString(family);
-    defer c.CFRelease(string);
+    defer cf.release(string);
 
     return fromRef(c.CTFontCreateCopyWithFamily(
         font.ref,
@@ -104,26 +106,35 @@ pub fn initCopyWithFamily(
 pub fn initForString() void {}
 pub fn initForStringWithLanguage() void {}
 
-pub fn toCFString(bytes: []const u8) StringError!c.CFStringRef {
-    if (!std.unicode.utf8ValidateSlice(bytes))
-        return error.InvalidUtf8;
-
-    return c.CFStringCreateWithBytes(
-        null,
-        bytes.ptr,
-        try toCFIndex(bytes.len),
-        c.kCFStringEncodingUTF8,
-        0,
-    ) orelse error.OutOfMemory;
+pub fn copyFontDescriptor(font: CTFont) CTFontDescriptor {
+    return c.CTFontCopyFontDescriptor(font.ref);
 }
 
-pub fn toCFIndex(length: usize) error{InputTooLong}!c.CFIndex {
-    return std.math.cast(c.CFIndex, length) orelse error.InputTooLong;
+pub fn copyFontAttribute(font: CTFont, attribute: []const u8) CTFontDescriptor {
+    const string = try toCFString(attribute);
+    defer cf.release(string);
+
+    return c.CTFontCopyAttribute(font.ref, string);
 }
+
+pub fn getSize(font: CTFont) f64 {
+    return c.CTFontGetSize(font.ref);
+}
+
+// TODO: need core foundation
+pub fn getMatrix() void {}
+
+pub fn getSymbolicTraits(font: CTFont) SymbolicTraits {
+    return c.CTFontGetSymbolicTraits(font.ref);
+}
+
+// TODO: need core foundation
+pub fn copyTraits() void {}
+pub fn copyDefaultCascadeListForLanguage() void {}
 
 test "core_text CTFont: initial with name" {
     const font = try CTFont.initWithName("Helvetica", 16.0);
-    defer c.CFRelease(font.ref);
+    defer cf.release(font.ref);
 
     try std.testing.expect(c.CTFontGetSize(font.ref) == 16.0);
     try std.testing.expect(c.CTFontGetAscent(font.ref) > 0.0);
