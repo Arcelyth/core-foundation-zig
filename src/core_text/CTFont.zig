@@ -43,6 +43,15 @@ pub fn fromRef(reference: c.CTFontRef) CTFont {
     };
 }
 
+pub fn retain(font: CTFont) CTFont {
+    _ = cf.retain(font.ref);
+    return font;
+}
+
+pub fn release(font: CTFont) void {
+    cf.release(font.ref);
+}
+
 // Creating Fonts
 
 pub fn initWithName(name: []const u8, size: f64) StringError!CTFont {
@@ -157,9 +166,7 @@ pub fn initForStringWithLanguage(
 // Getting Font Data
 
 pub fn copyFontDescriptor(font: CTFont) CTFontDescriptor {
-    return .{
-        .ref = c.CTFontCopyFontDescriptor(font.ref) orelse @panic("Attempt to create a null object."),
-    };
+    return .fromRef(c.CTFontCopyFontDescriptor(font.ref) orelse @panic("Attempt to create a null object."));
 }
 
 pub fn copyFontAttribute(font: CTFont, attribute: []const u8) StringError!CTFontDescriptor {

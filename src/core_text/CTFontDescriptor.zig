@@ -24,6 +24,15 @@ pub fn fromRef(reference: c.CTFontDescriptorRef) CTFontDescriptor {
     };
 }
 
+pub fn retain(descriptor: CTFontDescriptor) CTFontDescriptor {
+    _ = cf.retain(descriptor.ref);
+    return descriptor;
+}
+
+pub fn release(descriptor: CTFontDescriptor) void {
+    cf.release(descriptor.ref);
+}
+
 pub fn initWithNameAndSize(name: []const u8, size: f64) StringError!CTFontDescriptor {
     const string = try toCFString(name);
     defer cf.release(string);

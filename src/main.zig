@@ -1,7 +1,8 @@
-pub fn main() !void {}
+pub const raw = @import("c");
+pub const core_foundation = @import("core_foundation.zig");
+pub const core_text = @import("core_text.zig");
+pub const core_graphics = @import("core_graphics.zig");
 
 test {
-    _ = @import("core_foundation.zig");
-    _ = @import("core_text.zig");
-    _ = @import("core_graphics.zig");
+    @import("std").testing.refAllDecls(@This());
 }
