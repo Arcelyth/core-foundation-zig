@@ -1,7 +1,7 @@
 const std = @import("std");
 const c = @import("c");
 const toCFIndex = @import("index.zig").toCFIndex;
-pub const CFString = c.CFStringRef;
+pub const CFString = std.meta.Child(c.CFStringRef);
 pub const CFStringEncoding = c.CFStringEncoding;
 
 pub const StringError = error{

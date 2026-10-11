@@ -90,11 +90,11 @@ pub fn initWithDescriptorAndOptions(desc: CTFontDescriptor, size: f64, options: 
     ));
 }
 
-pub fn initUiFontForLanguage(ui_type: UiFontType, size: f64, language: ?[]const u8) StringError!CTFont {
+pub fn initUiFontForLanguage(ui_type: UiFontType, size: f64, language: ?[]const u8) StringError!?CTFont {
     const string = if (language) |value| try toCFString(value) else null;
     defer if (string) |value| cf.release(value);
 
-    return fromRef(c.CTFontCreateUIFontForLanguage(@backingInt(ui_type), size, string));
+    return fromRef(c.CTFontCreateUIFontForLanguage(@backingInt(ui_type), size, string) orelse return null);
 }
 
 pub fn initCopyWithAttributes(font: CTFont, size: f64, attributes: ?CTFontDescriptor) CTFont {
@@ -111,14 +111,14 @@ pub fn initCopyWithSymbolicTraits(
     size: f64,
     sym_trait_value: SymbolicTraits,
     sym_trait_mask: SymbolicTraits,
-) CTFont {
+) ?CTFont {
     return fromRef(c.CTFontCreateCopyWithSymbolicTraits(
         font.ref,
         size,
         null,
         @backingInt(sym_trait_value),
         @backingInt(sym_trait_mask),
-    ));
+    ) orelse return null);
 }
 
 pub fn initCopyWithFamily(
@@ -166,10 +166,10 @@ pub fn initForStringWithLanguage(
 // Getting Font Data
 
 pub fn copyFontDescriptor(font: CTFont) CTFontDescriptor {
-    return .fromRef(c.CTFontCopyFontDescriptor(font.ref) orelse @panic("Attempt to create a null object."));
+    return .fromRef(c.CTFontCopyFontDescriptor(font.ref));
 }
 
-pub fn copyFontAttribute(font: CTFont, attribute: []const u8) StringError!CTFontDescriptor {
+pub fn copyFontAttribute(font: CTFont, attribute: []const u8) StringError!cf.CFType {
     const string = try toCFString(attribute);
     defer cf.release(string);
 
@@ -434,11 +434,11 @@ pub fn initWithGraphicsFont(
 // Getting Font Table Data
 
 pub fn copyAvailableTables(font: CTFont, options: TableOptions) CFArray {
-    return c.CTFontCopyAvailableTables(font.ref, @backingInt(options));
+    return c.CTFontCopyAvailableTables(font.ref, options);
 }
 
 pub fn copyTable(font: CTFont, tag: TableTag, options: TableOptions) CFData {
-    return c.CTFontCopyTable(font.ref, tag, @backingInt(options));
+    return c.CTFontCopyTable(font.ref, tag, options);
 }
 
 pub fn hasTable(font: CTFont, tag: TableTag) bool {
@@ -447,7 +447,7 @@ pub fn hasTable(font: CTFont, tag: TableTag) bool {
 
 // Getting Font Identifiers
 
-pub fn getTypeID() cf.CFTypeID {
+pub fn getTypeID() usize {
     return c.CTFontGetTypeID();
 }
 
@@ -493,17 +493,17 @@ test "core_text CTFont: constructors" {
     defer cf.release(with_attributes.ref);
     try std.testing.expectEqual(font.getSize(), with_attributes.getSize());
 
-    const bold = initCopyWithSymbolicTraits(font, 0, .{ .bold = true }, .{ .bold = true });
+    const bold = initCopyWithSymbolicTraits(font, 0, .{ .bold = true }, .{ .bold = true }) orelse return error.NoFont;
     defer cf.release(bold.ref);
     try std.testing.expect(bold.getSymbolicTraits().bold);
     const family = (try initCopyWithFamily(font, 18, "Helvetica")) orelse return error.NoFont;
     defer cf.release(family.ref);
     try std.testing.expectEqual(@as(f64, 18), family.getSize());
 
-    const ui_font = try initUiFontForLanguage(.system, 14, "en");
+    const ui_font = (try initUiFontForLanguage(.system, 14, "en")) orelse return error.NoFont;
     defer cf.release(ui_font.ref);
     try std.testing.expectEqual(@as(f64, 14), ui_font.getSize());
-    const default_ui_font = try initUiFontForLanguage(.system, 14, null);
+    const default_ui_font = (try initUiFontForLanguage(.system, 14, null)) orelse return error.NoFont;
     defer cf.release(default_ui_font.ref);
     try std.testing.expectEqual(@as(f64, 14), default_ui_font.getSize());
 }

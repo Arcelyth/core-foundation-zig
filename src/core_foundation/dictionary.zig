@@ -1,3 +1,4 @@
+const std = @import("std");
 const c = @import("c");
 
-pub const CFDictionary = c.CFDictionaryRef;
+pub const CFDictionary = std.meta.Child(c.CFDictionaryRef);
