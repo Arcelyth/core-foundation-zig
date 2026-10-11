@@ -82,7 +82,8 @@ pub fn deleteBytes(data: CFMutableData, range: CFRange) void {
     c.CFDataDeleteBytes(data, range);
 }
 
-/// The returned range has location raw.kCFNotFound when there is no match.
-pub fn find(data: CFData, needle: CFData, range: CFRange, options: SearchFlags) CFRange {
-    return c.CFDataFind(data, needle, range, options);
+/// Returns null when there is no match.
+pub fn find(data: CFData, needle: CFData, range: CFRange, options: SearchFlags) ?CFRange {
+    const result = c.CFDataFind(data, needle, range, options);
+    return if (result.location == c.kCFNotFound) null else result;
 }
