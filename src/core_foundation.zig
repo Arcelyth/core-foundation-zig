@@ -8,6 +8,7 @@ pub const range = @import("core_foundation/range.zig");
 pub const data = @import("core_foundation/data.zig");
 pub const number = @import("core_foundation/number.zig");
 pub const set = @import("core_foundation/set.zig");
+pub const url = @import("core_foundation/url.zig");
 pub const character_set = @import("core_foundation/character_set.zig");
 
 pub const CFType = c.CFTypeRef;
