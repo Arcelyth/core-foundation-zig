@@ -17,6 +17,7 @@ pub const url = @import("core_foundation/url.zig");
 pub const character_set = @import("core_foundation/character_set.zig");
 pub const CFRange = @import("core_foundation/CFRange.zig");
 pub const CFSet = @import("core_foundation/CFSet.zig");
+pub const CFCharacterSet = @import("core_foundation/CFCharacterSet.zig");
 
 pub const CFType = c.CFTypeRef;
 
