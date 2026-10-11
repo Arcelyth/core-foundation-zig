@@ -4,6 +4,7 @@ pub const CFString = @import("core_foundation/CFString.zig");
 pub const string = @import("core_foundation/string.zig");
 pub const index = @import("core_foundation/index.zig");
 pub const array = @import("core_foundation/array.zig");
+pub const cf_array = @import("core_foundation/cf_array.zig");
 pub const dictionary = @import("core_foundation/dictionary.zig");
 pub const range = @import("core_foundation/range.zig");
 pub const data = @import("core_foundation/data.zig");
