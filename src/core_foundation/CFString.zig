@@ -52,7 +52,7 @@ pub fn init(bytes: []const u8) StringError!CFString {
 }
 
 /// Converts the CFString to an owned UTF-8 byte slice.
-pub fn to(self: CFString, allocator: std.mem.Allocator) StringError![]u8 {
+pub fn toSlice(self: CFString, allocator: std.mem.Allocator) StringError![]u8 {
     const range: c.CFRange = .{
         .location = 0,
         .length = c.CFStringGetLength(self.ref),
@@ -112,7 +112,7 @@ test "core_foundation CFString: init and to" {
     var string = try CFString.init(input);
     defer string.deinit();
 
-    const bytes = try string.to(std.testing.allocator);
+    const bytes = try string.toSlice(std.testing.allocator);
     defer std.testing.allocator.free(bytes);
 
     try std.testing.expectEqualStrings(input, bytes);
