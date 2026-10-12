@@ -77,7 +77,7 @@ pub fn getAdvances(self: CTRun, allocator: std.mem.Allocator) error{OutOfMemory}
     return values;
 }
 
-pub fn getStringIndices(self: CTRun, allocator: std.mem.Allocator) error{OutOfMemory}![]cf.CFIndex {
+pub fn getStringIndices(self: CTRun, allocator: std.mem.Allocator) error{OutOfMemory}![]cf.CFIndex.CFIndex {
     const values = try allocator.alloc(c.CFIndex, self.getGlyphCount());
     if (values.len != 0) c.CTRunGetStringIndices(
         self.ref,
