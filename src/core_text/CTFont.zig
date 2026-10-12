@@ -120,11 +120,11 @@ test "core_text CTFont: construction, retain and descriptor" {
     try std.testing.expectEqual(@as(f64, 16), font.getSize());
 
     const descriptor = font.copyFontDescriptor();
-    defer descriptor.release();
+    defer descriptor.deinit();
     const resized = CTFont.initWithDescriptor(descriptor, 24);
     defer resized.deinit();
-    try std.testing.expectEqual(@as(f64, 24), resized.getSize());
 
+    try std.testing.expectEqual(@as(f64, 24), resized.getSize());
     const inherited = CTFont.initWithDescriptor(descriptor, 0);
     defer inherited.deinit();
     try std.testing.expectEqual(font.getSize(), inherited.getSize());
