@@ -13,6 +13,7 @@ pub const set = @import("core_foundation/set.zig");
 pub const CFSet = @import("core_foundation/set.zig").CFSet;
 pub const CFURL = @import("core_foundation/CFURL.zig");
 pub const CFAttributeString = @import("core_foundation/CFAttributeString.zig");
+pub const CFStringTokenizer = @import("core_foundation/CFStringTokenizer.zig");
 pub const CFRange = @import("core_foundation/CFRange.zig");
 pub const CFCharacterSet = @import("core_foundation/CFCharacterSet.zig");
 
