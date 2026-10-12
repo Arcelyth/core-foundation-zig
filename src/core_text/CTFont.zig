@@ -1,509 +1,179 @@
 const CTFont = @This();
+
 const std = @import("std");
 const c = @import("c");
-const types = @import("types.zig");
-const Options = types.Options;
-const Orientation = types.Orientation;
-const UiFontType = types.UiFontType;
-const SymbolicTraits = types.SymbolicTraits;
-const CTFontDescriptor = @import("CTFontDescriptor.zig");
 const cf = @import("../core_foundation.zig");
-const cf_string = cf.string;
-const CFString = cf_string.CFString;
-const StringError = cf_string.StringError;
-const toCFString = cf_string.toCFString;
-const cf_index = cf.index;
-const CFIndex = cf_index.CFIndex;
-const toCFIndex = cf_index.toCFIndex;
-const CFRange = cf.range.CFRange;
-const CFArray = cf.array.CFArray;
-const CFDictionary = cf.dictionary.CFDictionary;
-const CFCharacterSet = cf.character_set.CFCharacterSet;
-const CFStringEncoding = cf_string.CFStringEncoding;
-const cg = @import("../core_graphics.zig");
-const CGRect = cg.geometry.CGRect;
-const CGAffineTransform = cg.geometry.CGAffineTransform;
-const CGSize = cg.geometry.CGSize;
-const CGGlyph = cg.types.CGGlyph;
-const CGFont = cg.types.CGFont;
-const CGPath = cg.types.CGPath;
-const CGContext = cg.types.CGContext;
-const CGPoint = cg.geometry.CGPoint;
-const CFData = cf.data.CFData;
-const TableTag = types.TableTag;
-const TableOptions = types.TableOptions;
+const CTFontDescriptor = @import("CTFontDescriptor.zig");
+const SymbolicTraits = @import("types.zig").SymbolicTraits;
 
-pub const CTFontRef = std.meta.Child(c.CTFontRef);
+ref: c.CTFontRef,
 
-ref: CTFontRef,
-
-pub fn fromRef(reference: c.CTFontRef) CTFont {
-    return .{
-        .ref = reference orelse @panic("Attempt to create a null object."),
-    };
+pub fn fromRef(ref: c.CTFontRef) CTFont {
+    return .{ .ref = ref };
 }
 
-pub fn retain(font: CTFont) CTFont {
-    _ = cf.retain(font.ref);
-    return font;
+pub fn asCFTypeRef(self: CTFont) c.CFTypeRef {
+    return @ptrCast(self.ref);
 }
 
-pub fn release(font: CTFont) void {
-    cf.release(font.ref);
+pub fn retain(self: CTFont) CTFont {
+    _ = c.CFRetain(self.asCFTypeRef());
+    return self;
 }
 
-// Creating Fonts
-
-pub fn initWithName(name: []const u8, size: f64) StringError!CTFont {
-    const string = try toCFString(name);
-    defer cf.release(string);
-
-    return fromRef(c.CTFontCreateWithName(
-        string,
-        size,
-        null,
-    ));
+pub fn deinit(self: CTFont) void {
+    c.CFRelease(self.asCFTypeRef());
 }
 
-pub fn initWithNameAndOptions(name: []const u8, size: f64, options: Options) StringError!CTFont {
-    const string = try toCFString(name);
-    defer cf.release(string);
-
-    return fromRef(c.CTFontCreateWithNameAndOptions(
-        string,
-        size,
-        null,
-        @backingInt(options),
-    ));
-}
-
-pub fn initWithDescriptor(desc: CTFontDescriptor, size: f64) CTFont {
-    return fromRef(c.CTFontCreateWithFontDescriptor(desc.ref, size, null));
-}
-
-pub fn initWithDescriptorAndOptions(desc: CTFontDescriptor, size: f64, options: Options) CTFont {
-    return fromRef(c.CTFontCreateWithFontDescriptorAndOptions(
-        desc.ref,
-        size,
-        null,
-        @backingInt(options),
-    ));
-}
-
-pub fn initUiFontForLanguage(ui_type: UiFontType, size: f64, language: ?[]const u8) StringError!?CTFont {
-    const string = if (language) |value| try toCFString(value) else null;
-    defer if (string) |value| cf.release(value);
-
-    return fromRef(c.CTFontCreateUIFontForLanguage(@backingInt(ui_type), size, string) orelse return null);
-}
-
-pub fn initCopyWithAttributes(font: CTFont, size: f64, attributes: ?CTFontDescriptor) CTFont {
-    return fromRef(c.CTFontCreateCopyWithAttributes(
-        font.ref,
-        size,
-        null,
-        if (attributes) |descriptor| descriptor.ref else null,
-    ));
-}
-
-pub fn initCopyWithSymbolicTraits(
-    font: CTFont,
-    size: f64,
-    sym_trait_value: SymbolicTraits,
-    sym_trait_mask: SymbolicTraits,
-) ?CTFont {
-    return fromRef(c.CTFontCreateCopyWithSymbolicTraits(
-        font.ref,
-        size,
-        null,
-        @backingInt(sym_trait_value),
-        @backingInt(sym_trait_mask),
-    ) orelse return null);
-}
-
-pub fn initCopyWithFamily(
-    font: CTFont,
-    size: f64,
-    family: []const u8,
-) StringError!?CTFont {
-    const string = try toCFString(family);
-    defer cf.release(string);
-
-    return fromRef(c.CTFontCreateCopyWithFamily(
-        font.ref,
-        size,
-        null,
-        string,
-    ) orelse return null);
-}
-
-pub fn initForString(font: CTFont, text: []const u8, range: CFRange) StringError!CTFont {
-    const string = try toCFString(text);
-    defer cf.release(string);
-
-    return fromRef(c.CTFontCreateForString(font.ref, string, range));
-}
-
-pub fn initForStringWithLanguage(
-    font: CTFont,
-    text: []const u8,
-    range: CFRange,
-    language: ?[]const u8,
-) StringError!CTFont {
-    const string = try toCFString(text);
-    defer cf.release(string);
-    const language_string = if (language) |value| try toCFString(value) else null;
-    defer if (language_string) |value| cf.release(value);
-
-    return fromRef(c.CTFontCreateForStringWithLanguage(
-        font.ref,
-        string,
-        range,
-        language_string,
-    ));
-}
-
-// Getting Font Data
-
-pub fn copyFontDescriptor(font: CTFont) CTFontDescriptor {
-    return .fromRef(c.CTFontCopyFontDescriptor(font.ref));
-}
-
-pub fn copyFontAttribute(font: CTFont, attribute: []const u8) StringError!cf.CFType {
-    const string = try toCFString(attribute);
-    defer cf.release(string);
-
-    return c.CTFontCopyAttribute(font.ref, string);
-}
-
-pub fn getSize(font: CTFont) f64 {
-    return c.CTFontGetSize(font.ref);
-}
-
-pub fn getMatrix(font: CTFont) CGAffineTransform {
-    return c.CTFontGetMatrix(font.ref);
-}
-
-pub fn getSymbolicTraits(font: CTFont) SymbolicTraits {
-    return @fromBackingInt(c.CTFontGetSymbolicTraits(font.ref));
-}
-
-pub fn copyTraits(font: CTFont) CFDictionary {
-    return c.CTFontCopyTraits(font.ref);
-}
-
-pub fn copyDefaultCascadeListForLanguage(font: CTFont, languages: CFArray) CFArray {
-    return c.CTFontCopyDefaultCascadeListForLanguages(font.ref, languages);
-}
-
-// Getting Font Names
-
-pub fn copyPostScriptName(font: CTFont) CFString {
-    return c.CTFontCopyPostScriptName(font.ref);
-}
-
-pub fn copyFamilyName(font: CTFont) CFString {
-    return c.CTFontCopyFamilyName(font.ref);
-}
-
-pub fn copyFullName(font: CTFont) CFString {
-    return c.CTFontCopyFullName(font.ref);
-}
-
-pub fn copyDisplayName(font: CTFont) CFString {
-    return c.CTFontCopyDisplayName(font.ref);
-}
-
-pub fn copyName(font: CTFont, name_key: []const u8) StringError!CFString {
-    const string = try toCFString(name_key);
-    defer cf.release(string);
-
-    return c.CTFontCopyName(font.ref, string);
-}
-
-pub fn copyLocalizedName(font: CTFont, name_key: []const u8, actual_language: ?*CFString) StringError!CFString {
-    const string = try toCFString(name_key);
-    defer cf.release(string);
-
-    return c.CTFontCopyLocalizedName(font.ref, string, actual_language);
-}
-
-// Working With Encoding
-
-pub fn copyCharacterSet(font: CTFont) CFCharacterSet {
-    return c.CTFontCopyCharacterSet(font.ref);
-}
-
-pub fn getStringEncoding(font: CTFont) CFStringEncoding {
-    return c.CTFontGetStringEncoding(font.ref);
-}
-
-pub fn copySupportedLanguages(font: CTFont) CFArray {
-    return c.CTFontCopySupportedLanguages(font.ref);
-}
-
-// Getting Font Metrics
-
-pub fn getAscent(font: CTFont) f64 {
-    return c.CTFontGetAscent(font.ref);
-}
-
-pub fn getDescent(font: CTFont) f64 {
-    return c.CTFontGetDescent(font.ref);
-}
-
-pub fn getLeading(font: CTFont) f64 {
-    return c.CTFontGetLeading(font.ref);
-}
-
-pub fn getUnitsPerEm(font: CTFont) u32 {
-    return c.CTFontGetUnitsPerEm(font.ref);
-}
-
-pub fn getGlyphCount(font: CTFont) CFIndex {
-    return c.CTFontGetGlyphCount(font.ref);
-}
-
-pub fn getBoundingBox(font: CTFont) CGRect {
-    return c.CTFontGetBoundingBox(font.ref);
-}
-
-pub fn getUnderlinePosition(font: CTFont) f64 {
-    return c.CTFontGetUnderlinePosition(font.ref);
-}
-
-pub fn getUnderlineThickness(font: CTFont) f64 {
-    return c.CTFontGetUnderlineThickness(font.ref);
-}
-
-pub fn getSlantAngle(font: CTFont) f64 {
-    return c.CTFontGetSlantAngle(font.ref);
-}
-
-pub fn getCapHeight(font: CTFont) f64 {
-    return c.CTFontGetCapHeight(font.ref);
-}
-
-pub fn getXHeight(font: CTFont) f64 {
-    return c.CTFontGetXHeight(font.ref);
-}
-
-pub fn createPathForGlyph(font: CTFont, glyph: CGGlyph, matrix: ?*const CGAffineTransform) CGPath {
-    return c.CTFontCreatePathForGlyph(font.ref, glyph, matrix);
-}
-
-pub fn getGlyphWithName(font: CTFont, name: []const u8) StringError!CGGlyph {
-    const string = try toCFString(name);
-    defer cf.release(string);
-
-    return c.CTFontGetGlyphWithName(font.ref, string);
-}
-
-pub fn copyNameForGlyph(font: CTFont, glyph: CGGlyph) CFString {
-    return c.CTFontCopyNameForGlyph(font.ref, glyph);
-}
-
-pub fn getBoundingRectsForGlyphs(
-    font: CTFont,
-    orientation: Orientation,
-    glyphs: []const CGGlyph,
-    rects: ?[]CGRect,
-) CGRect {
-    if (rects) |out| std.debug.assert(out.len >= glyphs.len);
-
-    return c.CTFontGetBoundingRectsForGlyphs(
-        font.ref,
-        @backingInt(orientation),
-        glyphs.ptr,
-        if (rects) |out| out.ptr else null,
-        @intCast(glyphs.len),
-    );
-}
-
-pub fn getAdvancesForGlyphs(
-    font: CTFont,
-    orientation: Orientation,
-    glyphs: []const CGGlyph,
-    advances: ?[]CGSize,
-) f64 {
-    if (advances) |out| std.debug.assert(out.len >= glyphs.len);
-
-    return c.CTFontGetAdvancesForGlyphs(
-        font.ref,
-        @backingInt(orientation),
-        glyphs.ptr,
-        if (advances) |out| out.ptr else null,
-        @intCast(glyphs.len),
-    );
-}
-
-pub fn getOpticalBoundsForGlyphs(font: CTFont, glyphs: []const CGGlyph, rects: ?[]CGRect) CGRect {
-    if (rects) |out| std.debug.assert(out.len >= glyphs.len);
-
-    return c.CTFontGetOpticalBoundsForGlyphs(
-        font.ref,
-        glyphs.ptr,
-        if (rects) |out| out.ptr else null,
-        @intCast(glyphs.len),
-        0,
-    );
-}
-
-pub fn getVerticalTranslationsForGlyphs(font: CTFont, glyphs: []const CGGlyph, translations: []CGSize) void {
-    std.debug.assert(translations.len >= glyphs.len);
-    if (glyphs.len == 0) return;
-    c.CTFontGetVerticalTranslationsForGlyphs(font.ref, glyphs.ptr, translations.ptr, @intCast(glyphs.len));
-}
-
-// Working With Font Variations
-
-pub fn copyVariationAxes(font: CTFont) CFArray {
-    return c.CTFontCopyVariationAxes(font.ref);
-}
-
-pub fn copyVariation(font: CTFont) CFDictionary {
-    return c.CTFontCopyVariation(font.ref);
-}
-
-// Getting Font Features
-
-pub fn copyFeatures(font: CTFont) CFArray {
-    return c.CTFontCopyFeatures(font.ref);
-}
-
-pub fn copyFeatureSettings(font: CTFont) CFArray {
-    return c.CTFontCopyFeatureSettings(font.ref);
-}
-
-// Working With Glyphs
-
-pub fn getGlyphsForCharacters(font: CTFont, characters: []const u16, glyphs: []CGGlyph) bool {
-    std.debug.assert(glyphs.len >= characters.len);
-    if (characters.len == 0) return true;
-
-    return c.CTFontGetGlyphsForCharacters(font.ref, characters.ptr, glyphs.ptr, @intCast(characters.len));
-}
-
-pub fn drawGlyphs(
-    font: CTFont,
-    glyphs: []const CGGlyph,
-    positions: []const CGPoint,
-    context: CGContext,
-) void {
-    std.debug.assert(positions.len >= glyphs.len);
-    if (glyphs.len == 0) return;
-    c.CTFontDrawGlyphs(font.ref, glyphs.ptr, positions.ptr, glyphs.len, context);
-}
-
-/// Null queries the count; the returned count may exceed the output capacity.
-pub fn getLigatureCaretPositions(font: CTFont, glyph: CGGlyph, positions: ?[]f64) CFIndex {
-    const count = if (positions) |out| out.len else 0;
-
-    return c.CTFontGetLigatureCaretPositions(
-        font.ref,
-        glyph,
-        if (positions) |out| (if (out.len == 0) null else out.ptr) else null,
-        @intCast(count),
-    );
-}
-
-// Converting Fonts
-
-pub fn copyGraphicsFont(font: CTFont, attributes: ?*?CTFontDescriptor) CGFont {
-    var reference: c.CTFontDescriptorRef = null;
-    const graphics_font = c.CTFontCopyGraphicsFont(font.ref, if (attributes != null) &reference else null);
-    if (attributes) |out| out.* = if (reference) |value| .{ .ref = value } else null;
-
-    return graphics_font;
-}
-
-pub fn initWithGraphicsFont(
-    graphics_font: CGFont,
-    size: f64,
-    matrix: ?*const CGAffineTransform,
-    attributes: ?CTFontDescriptor,
-) CTFont {
-    return fromRef(c.CTFontCreateWithGraphicsFont(
-        graphics_font,
-        size,
-        matrix,
-        if (attributes) |descriptor| descriptor.ref else null,
-    ));
-}
-
-// Getting Font Table Data
-
-pub fn copyAvailableTables(font: CTFont, options: TableOptions) CFArray {
-    return c.CTFontCopyAvailableTables(font.ref, options);
-}
-
-pub fn copyTable(font: CTFont, tag: TableTag, options: TableOptions) CFData {
-    return c.CTFontCopyTable(font.ref, tag, options);
-}
-
-pub fn hasTable(font: CTFont, tag: TableTag) bool {
-    return c.CTFontHasTable(font.ref, tag);
-}
-
-// Getting Font Identifiers
-
-pub fn getTypeID() usize {
+pub fn getTypeID() c.CFTypeID {
     return c.CTFontGetTypeID();
 }
 
-pub fn getUiFontType(font: CTFont) UiFontType {
-    return @fromBackingInt(c.CTFontGetUIFontType(font.ref));
+/// Creates a font matching a UTF-8 name, at the requested point size.
+pub fn initWithName(name: []const u8, size: f64) cf.CFString.StringError!CTFont {
+    const string = try cf.CFString.init(name);
+    defer string.deinit();
+    return .fromRef(c.CTFontCreateWithName(string.ref, size, null));
 }
 
-// Adaptive Images
-
-pub fn getTypographicBoundsForAdaptiveImageProvider(font: CTFont, provider: cf.CFType) CGRect {
-    return c.CTFontGetTypographicBoundsForAdaptiveImageProvider(font.ref, provider);
+/// Creates a font from a descriptor. Zero preserves its size, or uses Core Text's default.
+pub fn initWithDescriptor(descriptor: CTFontDescriptor, size: f64) CTFont {
+    return .fromRef(c.CTFontCreateWithFontDescriptor(descriptor.ref, size, null));
 }
 
-pub fn drawImageFromAdaptiveImageProviderAtPoint(
-    font: CTFont,
-    provider: cf.CFType,
-    point: CGPoint,
-    context: CGContext,
-) void {
-    c.CTFontDrawImageFromAdaptiveImageProviderAtPoint(font.ref, provider, point, context);
+/// Returns an owned descriptor.
+pub fn copyFontDescriptor(self: CTFont) CTFontDescriptor {
+    return .fromRef(c.CTFontCopyFontDescriptor(self.ref));
 }
 
-test "core_text CTFont: constructors" {
-    const f = try CTFont.initWithName("Helvetica", 16.0);
-    defer cf.release(f.ref);
+/// Returns an owned dictionary of native font traits.
+pub fn copyTraits(self: CTFont) cf.CFDictionary(cf.CFString, cf.CFNumber) {
+    return .fromRef(c.CTFontCopyTraits(self.ref));
+}
 
-    const font = try initWithNameAndOptions("Helvetica", 16, .{ .prevent_auto_activation = true });
-    defer cf.release(font.ref);
+pub fn copyFamilyName(self: CTFont) cf.CFString {
+    return .fromRef(c.CTFontCopyFamilyName(self.ref));
+}
+
+pub fn copyPostScriptName(self: CTFont) cf.CFString {
+    return .fromRef(c.CTFontCopyPostScriptName(self.ref));
+}
+
+/// Returns an owned set of the font's supported Unicode characters.
+pub fn copyCharacterSet(self: CTFont) cf.CFCharacterSet {
+    return .fromRef(c.CTFontCopyCharacterSet(self.ref));
+}
+
+/// Returns owned table data, or null when the table is absent.
+pub fn copyTable(self: CTFont, tag: c.CTFontTableTag, options: c.CTFontTableOptions) ?cf.CFData {
+    return .fromRef(c.CTFontCopyTable(self.ref, tag, options) orelse return null);
+}
+
+pub fn getSize(self: CTFont) f64 {
+    return c.CTFontGetSize(self.ref);
+}
+
+pub fn getSymbolicTraits(self: CTFont) SymbolicTraits {
+    return @fromBackingInt(c.CTFontGetSymbolicTraits(self.ref));
+}
+
+pub fn getUnitsPerEm(self: CTFont) u32 {
+    return c.CTFontGetUnitsPerEm(self.ref);
+}
+
+pub fn getAscent(self: CTFont) f64 {
+    return c.CTFontGetAscent(self.ref);
+}
+
+pub fn getDescent(self: CTFont) f64 {
+    return c.CTFontGetDescent(self.ref);
+}
+
+pub fn getLeading(self: CTFont) f64 {
+    return c.CTFontGetLeading(self.ref);
+}
+
+pub fn getXHeight(self: CTFont) f64 {
+    return c.CTFontGetXHeight(self.ref);
+}
+
+pub fn getCapHeight(self: CTFont) f64 {
+    return c.CTFontGetCapHeight(self.ref);
+}
+
+pub fn getUnderlinePosition(self: CTFont) f64 {
+    return c.CTFontGetUnderlinePosition(self.ref);
+}
+
+pub fn getUnderlineThickness(self: CTFont) f64 {
+    return c.CTFontGetUnderlineThickness(self.ref);
+}
+
+test "core_text CTFont: construction, retain and descriptor" {
+    const font = blk: {
+        const original = try CTFont.initWithName("Helvetica", 16);
+        defer original.deinit();
+        break :blk CTFont.fromRef(original.ref).retain();
+    };
+    defer font.deinit();
+    try std.testing.expectEqual(CTFont.getTypeID(), c.CFGetTypeID(font.asCFTypeRef()));
+    try std.testing.expectEqual(@as(f64, 16), font.getSize());
+
     const descriptor = font.copyFontDescriptor();
-    defer cf.release(descriptor.ref);
+    defer descriptor.release();
+    const resized = CTFont.initWithDescriptor(descriptor, 24);
+    defer resized.deinit();
+    try std.testing.expectEqual(@as(f64, 24), resized.getSize());
 
-    const described = initWithDescriptor(descriptor, 20);
-    defer cf.release(described.ref);
-    try std.testing.expectEqual(@as(f64, 20), described.getSize());
-    const with_options = initWithDescriptorAndOptions(descriptor, 24, .{});
-    defer cf.release(with_options.ref);
-    try std.testing.expectEqual(@as(f64, 24), with_options.getSize());
+    const inherited = CTFont.initWithDescriptor(descriptor, 0);
+    defer inherited.deinit();
+    try std.testing.expectEqual(font.getSize(), inherited.getSize());
+    try std.testing.expectError(error.InvalidUtf8, CTFont.initWithName("\xff", 16));
+}
 
-    const resized = initCopyWithAttributes(font, 32, null);
-    defer cf.release(resized.ref);
-    try std.testing.expectEqual(@as(f64, 32), resized.getSize());
-    const with_attributes = initCopyWithAttributes(font, 0, descriptor);
-    defer cf.release(with_attributes.ref);
-    try std.testing.expectEqual(font.getSize(), with_attributes.getSize());
+test "core_text CTFont: owned names and traits" {
+    const font = try CTFont.initWithName("Helvetica-Bold", 16);
+    const family = font.copyFamilyName();
+    defer family.deinit();
+    const postscript = font.copyPostScriptName();
+    defer postscript.deinit();
+    const traits = font.copyTraits();
+    defer traits.deinit();
+    const bold = font.getSymbolicTraits().bold;
+    font.deinit();
 
-    const bold = initCopyWithSymbolicTraits(font, 0, .{ .bold = true }, .{ .bold = true }) orelse return error.NoFont;
-    defer cf.release(bold.ref);
-    try std.testing.expect(bold.getSymbolicTraits().bold);
-    const family = (try initCopyWithFamily(font, 18, "Helvetica")) orelse return error.NoFont;
-    defer cf.release(family.ref);
-    try std.testing.expectEqual(@as(f64, 18), family.getSize());
+    const family_bytes = try family.toSlice(std.testing.allocator);
+    defer std.testing.allocator.free(family_bytes);
+    try std.testing.expectEqualStrings("Helvetica", family_bytes);
 
-    const ui_font = (try initUiFontForLanguage(.system, 14, "en")) orelse return error.NoFont;
-    defer cf.release(ui_font.ref);
-    try std.testing.expectEqual(@as(f64, 14), ui_font.getSize());
-    const default_ui_font = (try initUiFontForLanguage(.system, 14, null)) orelse return error.NoFont;
-    defer cf.release(default_ui_font.ref);
-    try std.testing.expectEqual(@as(f64, 14), default_ui_font.getSize());
+    const postscript_bytes = try postscript.toSlice(std.testing.allocator);
+    defer std.testing.allocator.free(postscript_bytes);
+    try std.testing.expectEqualStrings("Helvetica-Bold", postscript_bytes);
+    try std.testing.expect(bold);
+
+    const weight = traits.get(cf.CFString.fromRef(c.kCTFontWeightTrait)).?;
+    try std.testing.expect(weight.to(f64).? > 0);
+}
+
+test "core_text CTFont: metrics, character coverage and tables" {
+    const font = try CTFont.initWithName("Helvetica", 16);
+    defer font.deinit();
+    try std.testing.expect(font.getUnitsPerEm() > 0);
+    try std.testing.expect(font.getAscent() > 0);
+    try std.testing.expect(font.getDescent() >= 0);
+    try std.testing.expect(font.getLeading() >= 0);
+    try std.testing.expect(font.getXHeight() > 0);
+    try std.testing.expect(font.getCapHeight() >= font.getXHeight());
+    try std.testing.expect(font.getUnderlinePosition() < 0);
+    try std.testing.expect(font.getUnderlineThickness() > 0);
+
+    const characters = font.copyCharacterSet();
+    defer characters.deinit();
+    try std.testing.expect(characters.contains('A'));
+    const table = font.copyTable(c.kCTFontTableHead, c.kCTFontTableOptionNoOptions).?;
+    defer table.deinit();
+    const bytes = try table.toSlice(std.testing.allocator);
+    defer std.testing.allocator.free(bytes);
+    try std.testing.expect(bytes.len > 0);
+    try std.testing.expect(font.copyTable(0, c.kCTFontTableOptionNoOptions) == null);
 }

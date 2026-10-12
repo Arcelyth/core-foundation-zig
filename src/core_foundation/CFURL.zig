@@ -2,7 +2,7 @@ const CFURL = @This();
 
 const std = @import("std");
 const c = @import("c");
-const toCFIndex = @import("index.zig").toCFIndex;
+const toCFIndex = @import("CFIndex.zig").fromUsize;
 const CFString = @import("CFString.zig");
 
 ref: c.CFURLRef,

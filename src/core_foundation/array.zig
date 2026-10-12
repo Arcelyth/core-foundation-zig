@@ -1,145 +1,94 @@
 const std = @import("std");
 const c = @import("c");
-const CFAllocator = std.meta.Child(c.CFAllocatorRef);
-const CFIndex = @import("index.zig").CFIndex;
-const toCFIndex = @import("index.zig").toCFIndex;
-const CFRange = @import("range.zig").CFRange;
+const toCFIndex = @import("CFIndex.zig").fromUsize;
 
-pub const CFArray = std.meta.Child(c.CFArrayRef);
-pub const CFMutableArray = std.meta.Child(c.CFMutableArrayRef);
-pub const CallBacks = c.CFArrayCallBacks;
-pub const ApplierFunction = std.meta.Child(c.CFArrayApplierFunction);
-pub const ComparatorFunction = std.meta.Child(c.CFComparatorFunction);
+/// An array of CF wrappers.
+pub fn CFArray(comptime T: type) type {
+    return struct {
+        const Self = @This();
 
-pub fn getTypeID() usize {
-    return c.CFArrayGetTypeID();
+        ref: c.CFArrayRef,
+
+        pub fn fromRef(ref: c.CFArrayRef) Self {
+            return .{ .ref = ref };
+        }
+
+        pub fn asCFTypeRef(self: Self) c.CFTypeRef {
+            return @ptrCast(self.ref);
+        }
+
+        pub fn retain(self: Self) Self {
+            _ = c.CFRetain(self.asCFTypeRef());
+            return self;
+        }
+
+        pub fn deinit(self: Self) void {
+            c.CFRelease(self.asCFTypeRef());
+        }
+
+        pub fn getTypeID() c.CFTypeID {
+            return c.CFArrayGetTypeID();
+        }
+
+        /// Creates an owned array that retains each CF object.
+        pub fn init(values: []const T) error{ InputTooLong, OutOfMemory }!Self {
+            const temporary = c.CFArrayCreateMutable(
+                c.kCFAllocatorDefault,
+                try toCFIndex(values.len),
+                &c.kCFTypeArrayCallBacks,
+            ) orelse return error.OutOfMemory;
+            defer c.CFRelease(temporary);
+
+            for (values) |value| c.CFArrayAppendValue(temporary, @ptrCast(value.ref));
+            const ref = c.CFArrayCreateCopy(c.kCFAllocatorDefault, temporary) orelse return error.OutOfMemory;
+            return .{ .ref = ref };
+        }
+
+        pub fn len(self: Self) usize {
+            return @intCast(c.CFArrayGetCount(self.ref));
+        }
+
+        /// Returns a borrowed element, or null when index is out of bounds.
+        /// Retain the element before keeping it beyond the array's lifetime.
+        pub fn get(self: Self, index: usize) ?T {
+            if (index >= self.len()) return null;
+            const value = c.CFArrayGetValueAtIndex(self.ref, @intCast(index));
+            return T.fromRef(@ptrCast(@alignCast(@constCast(value))));
+        }
+
+        /// Allocates a slice of borrowed elements. Free the slice with allocator.free().
+        /// Keep the array alive while using the elements, or retain them separately.
+        pub fn toSlice(self: Self, allocator: std.mem.Allocator) error{OutOfMemory}![]T {
+            const values = try allocator.alloc(T, self.len());
+            for (values, 0..) |*value, index| value.* = self.get(index).?;
+            return values;
+        }
+    };
 }
 
-pub fn create(
-    allocator: ?CFAllocator,
-    values: []const ?*const anyopaque,
-    callbacks: ?*const CallBacks,
-) error{ InputTooLong, OutOfMemory }!CFArray {
-    return c.CFArrayCreate(
-        allocator,
-        if (values.len == 0) null else @constCast(values.ptr),
-        try toCFIndex(values.len),
-        callbacks,
-    ) orelse error.OutOfMemory;
-}
+test "core_foundation CFArray: strings, indexing and slice conversion" {
+    const CFString = @import("CFString.zig");
+    const Array = CFArray(CFString);
+    const array = blk: {
+        const first = try CFString.init("Helvetica");
+        defer first.deinit();
 
-pub fn createCopy(allocator: ?CFAllocator, array: CFArray) error{OutOfMemory}!CFArray {
-    return c.CFArrayCreateCopy(allocator, array) orelse error.OutOfMemory;
-}
+        const second = try CFString.init("字体");
+        defer second.deinit();
+        break :blk try Array.init(&.{ first, second });
+    };
+    defer array.deinit();
 
-pub fn createMutable(
-    allocator: ?CFAllocator,
-    capacity: usize,
-    callbacks: ?*const CallBacks,
-) error{ InputTooLong, OutOfMemory }!CFMutableArray {
-    return c.CFArrayCreateMutable(allocator, try toCFIndex(capacity), callbacks) orelse error.OutOfMemory;
-}
+    try std.testing.expectEqual(@as(usize, 2), array.len());
+    try std.testing.expect(array.get(2) == null);
 
-pub fn createMutableCopy(
-    allocator: ?CFAllocator,
-    capacity: usize,
-    array: CFArray,
-) error{ InputTooLong, OutOfMemory }!CFMutableArray {
-    return c.CFArrayCreateMutableCopy(allocator, try toCFIndex(capacity), array) orelse error.OutOfMemory;
-}
+    const values = try array.toSlice(std.testing.allocator);
+    defer std.testing.allocator.free(values);
+    for (values, [_][]const u8{ "Helvetica", "字体" }, 0..) |value, expected, index| {
+        try std.testing.expect(value.eq(array.get(index).?));
+        const text = try value.toSlice(std.testing.allocator);
+        defer std.testing.allocator.free(text);
 
-pub fn bSearchValues(
-    array: CFArray,
-    range: CFRange,
-    value: ?*const anyopaque,
-    comparator: ComparatorFunction,
-    context: ?*anyopaque,
-) CFIndex {
-    return c.CFArrayBSearchValues(
-        array,
-        range,
-        value,
-        comparator,
-        context,
-    );
-}
-
-pub fn containsValue(array: CFArray, range: CFRange, value: ?*const anyopaque) bool {
-    return c.CFArrayContainsValue(array, range, value) != 0;
-}
-
-pub fn getCount(array: CFArray) CFIndex {
-    return c.CFArrayGetCount(array);
-}
-
-pub fn getCountOfValue(array: CFArray, range: CFRange, value: ?*const anyopaque) CFIndex {
-    return c.CFArrayGetCountOfValue(array, range, value);
-}
-
-/// Returns null when no value matches.
-pub fn getFirstIndexOfValue(array: CFArray, range: CFRange, value: ?*const anyopaque) ?CFIndex {
-    const res = c.CFArrayGetFirstIndexOfValue(array, range, value);
-    if (res == -1) return null else return res;
-}
-
-/// Returns null when no value matches.
-pub fn getLastIndexOfValue(array: CFArray, range: CFRange, value: ?*const anyopaque) ?CFIndex {
-    const res = c.CFArrayGetLastIndexOfValue(array, range, value);
-    if (res == -1) return null else return res;
-}
-
-pub fn getValueAtIndex(array: CFArray, index: CFIndex) ?*const anyopaque {
-    return c.CFArrayGetValueAtIndex(array, index);
-}
-
-pub fn getValues(array: CFArray, range: CFRange, values: []?*const anyopaque) void {
-    std.debug.assert(range.length >= 0);
-    std.debug.assert(@as(usize, @intCast(range.length)) <= values.len);
-    if (range.length == 0) return;
-    c.CFArrayGetValues(array, range, values.ptr);
-}
-
-pub fn applyFunction(array: CFArray, range: CFRange, applier: ApplierFunction, context: ?*anyopaque) void {
-    c.CFArrayApplyFunction(array, range, applier, context);
-}
-
-pub fn appendValue(array: CFMutableArray, value: ?*const anyopaque) void {
-    c.CFArrayAppendValue(array, value);
-}
-
-pub fn insertValueAtIndex(array: CFMutableArray, index: CFIndex, value: ?*const anyopaque) void {
-    c.CFArrayInsertValueAtIndex(array, index, value);
-}
-
-pub fn setValueAtIndex(array: CFMutableArray, index: CFIndex, value: ?*const anyopaque) void {
-    c.CFArraySetValueAtIndex(array, index, value);
-}
-
-pub fn removeValueAtIndex(array: CFMutableArray, index: CFIndex) void {
-    c.CFArrayRemoveValueAtIndex(array, index);
-}
-
-pub fn removeAllValues(array: CFMutableArray) void {
-    c.CFArrayRemoveAllValues(array);
-}
-
-pub fn replaceValues(array: CFMutableArray, range: CFRange, values: []const ?*const anyopaque) error{InputTooLong}!void {
-    c.CFArrayReplaceValues(
-        array,
-        range,
-        if (values.len == 0) null else @constCast(values.ptr),
-        try toCFIndex(values.len),
-    );
-}
-
-pub fn exchangeValuesAtIndices(array: CFMutableArray, first: CFIndex, second: CFIndex) void {
-    c.CFArrayExchangeValuesAtIndices(array, first, second);
-}
-
-pub fn sortValues(array: CFMutableArray, range: CFRange, comparator: ComparatorFunction, context: ?*anyopaque) void {
-    c.CFArraySortValues(array, range, comparator, context);
-}
-
-pub fn appendArray(array: CFMutableArray, other: CFArray, range: CFRange) void {
-    c.CFArrayAppendArray(array, other, range);
+        try std.testing.expectEqualStrings(expected, text);
+    }
 }

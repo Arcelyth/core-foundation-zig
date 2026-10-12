@@ -1,120 +1,243 @@
 const std = @import("std");
 const c = @import("c");
-const CFAllocator = std.meta.Child(c.CFAllocatorRef);
-const CFIndex = @import("index.zig").CFIndex;
-const toCFIndex = @import("index.zig").toCFIndex;
+const index = @import("CFIndex.zig");
 
-pub const CFDictionary = std.meta.Child(c.CFDictionaryRef);
-pub const CFMutableDictionary = std.meta.Child(c.CFMutableDictionaryRef);
-pub const KeyCallBacks = c.CFDictionaryKeyCallBacks;
-pub const ValueCallBacks = c.CFDictionaryValueCallBacks;
-pub const ApplierFunction = std.meta.Child(c.CFDictionaryApplierFunction);
+/// Keys and values are CF wrappers or native CF references.
+/// The dictionary retains its objects. Returned objects are borrowed.
+pub fn CFDictionary(comptime K: type, comptime V: type) type {
+    return struct {
+        const Self = @This();
+        pub const Key = K;
+        pub const Value = V;
+        pub const Entry = struct { key: K, value: V };
 
-pub fn getTypeID() usize {
-    return c.CFDictionaryGetTypeID();
+        ref: c.CFDictionaryRef,
+
+        pub fn fromRef(ref: c.CFDictionaryRef) Self {
+            return .{ .ref = ref };
+        }
+
+        pub fn asCFTypeRef(self: Self) c.CFTypeRef {
+            return @ptrCast(self.ref);
+        }
+
+        pub fn retain(self: Self) Self {
+            _ = c.CFRetain(self.asCFTypeRef());
+            return self;
+        }
+
+        pub fn deinit(self: Self) void {
+            c.CFRelease(self.asCFTypeRef());
+        }
+
+        pub fn getTypeID() c.CFTypeID {
+            return c.CFDictionaryGetTypeID();
+        }
+
+        /// Creates an owned dictionary. Later entries replace earlier equal keys.
+        pub fn init(entries: []const Entry) error{ InputTooLong, OutOfMemory }!Self {
+            const temporary = try CFMutableDictionary(K, V).init(entries);
+            defer temporary.deinit();
+            return temporary.copy();
+        }
+
+        pub fn len(self: Self) usize {
+            return @intCast(c.CFDictionaryGetCount(self.ref));
+        }
+
+        pub fn contains(self: Self, key: K) bool {
+            return c.CFDictionaryContainsKey(self.ref, nativeRef(key)) != 0;
+        }
+
+        /// Returns a borrowed value, or null when the key is absent.
+        pub fn get(self: Self, key: K) ?V {
+            const value = c.CFDictionaryGetValue(self.ref, nativeRef(key)) orelse return null;
+            return wrap(V, value);
+        }
+
+        /// Creates an independent mutable dictionary retaining the same CF objects.
+        pub fn mutableCopy(self: Self) error{OutOfMemory}!CFMutableDictionary(K, V) {
+            const ref = c.CFDictionaryCreateMutableCopy(c.kCFAllocatorDefault, 0, self.ref) orelse return error.OutOfMemory;
+            return .{ .ref = ref };
+        }
+
+        /// Allocates unordered pairs of borrowed objects. Free with allocator.free().
+        /// Retain objects before removing/replacing them or releasing the dictionary.
+        pub fn toSlice(self: Self, allocator: std.mem.Allocator) error{OutOfMemory}![]Entry {
+            const entries = try allocator.alloc(Entry, self.len());
+            var output: Collect = .{ .entries = entries };
+            c.CFDictionaryApplyFunction(self.ref, Collect.append, &output);
+            return entries;
+        }
+
+        const Collect = struct {
+            entries: []Entry,
+            next: usize = 0,
+
+            fn append(key: c.CFTypeRef, value: c.CFTypeRef, context: ?*anyopaque) callconv(.c) void {
+                const output: *Collect = @ptrCast(@alignCast(context.?));
+                output.entries[output.next] = .{ .key = wrap(K, key), .value = wrap(V, value) };
+                output.next += 1;
+            }
+        };
+    };
 }
 
-pub fn create(
-    allocator: ?CFAllocator,
-    keys: []const ?*const anyopaque,
-    values: []const ?*const anyopaque,
-    key_callbacks: ?*const KeyCallBacks,
-    value_callbacks: ?*const ValueCallBacks,
-) error{ InputTooLong, OutOfMemory }!CFDictionary {
-    std.debug.assert(keys.len == values.len);
-    return c.CFDictionaryCreate(
-        allocator,
-        if (keys.len == 0) null else @constCast(keys.ptr),
-        if (values.len == 0) null else @constCast(values.ptr),
-        try toCFIndex(keys.len),
-        key_callbacks,
-        value_callbacks,
-    ) orelse error.OutOfMemory;
+pub fn CFMutableDictionary(comptime K: type, comptime V: type) type {
+    return struct {
+        const Self = @This();
+        const Immutable = CFDictionary(K, V);
+        pub const Key = K;
+        pub const Value = V;
+        pub const Entry = Immutable.Entry;
+
+        ref: c.CFMutableDictionaryRef,
+
+        /// Wraps a native mutable dictionary without retaining it.
+        pub fn fromRef(ref: c.CFMutableDictionaryRef) Self {
+            return .{ .ref = ref };
+        }
+
+        pub fn asCFTypeRef(self: Self) c.CFTypeRef {
+            return @ptrCast(self.ref);
+        }
+
+        pub fn retain(self: Self) Self {
+            _ = c.CFRetain(self.asCFTypeRef());
+            return self;
+        }
+
+        pub fn deinit(self: Self) void {
+            c.CFRelease(self.asCFTypeRef());
+        }
+
+        pub fn getTypeID() c.CFTypeID {
+            return c.CFDictionaryGetTypeID();
+        }
+
+        /// Creates an owned dictionary retaining its keys and values.
+        pub fn init(entries: []const Entry) error{ InputTooLong, OutOfMemory }!Self {
+            const ref = c.CFDictionaryCreateMutable(
+                c.kCFAllocatorDefault,
+                try index.fromUsize(entries.len),
+                &c.kCFTypeDictionaryKeyCallBacks,
+                &c.kCFTypeDictionaryValueCallBacks,
+            ) orelse return error.OutOfMemory;
+
+            const self: Self = .{ .ref = ref };
+            for (entries) |entry| self.set(entry.key, entry.value);
+            return self;
+        }
+
+        /// Returns a borrowed view of this dictionary. Do not deinit the view.
+        pub fn asDictionary(self: Self) Immutable {
+            return .{ .ref = self.ref };
+        }
+
+        /// Creates an owned immutable snapshot.
+        pub fn copy(self: Self) error{OutOfMemory}!Immutable {
+            const ref = c.CFDictionaryCreateCopy(c.kCFAllocatorDefault, self.ref) orelse return error.OutOfMemory;
+            return .{ .ref = ref };
+        }
+
+        pub fn len(self: Self) usize {
+            return self.asDictionary().len();
+        }
+
+        pub fn contains(self: Self, key: K) bool {
+            return self.asDictionary().contains(key);
+        }
+
+        /// Returns a borrowed value. Retain it before replacing or removing it.
+        pub fn get(self: Self, key: K) ?V {
+            return self.asDictionary().get(key);
+        }
+
+        /// Returns allocated pairs of borrowed objects, as in CFDictionary.toSlice.
+        pub fn toSlice(self: Self, allocator: std.mem.Allocator) error{OutOfMemory}![]Entry {
+            return self.asDictionary().toSlice(allocator);
+        }
+
+        /// Inserts or updates a value.
+        pub fn set(self: Self, key: K, value: V) void {
+            c.CFDictionarySetValue(self.ref, nativeRef(key), nativeRef(value));
+        }
+
+        /// Inserts only when the key is absent.
+        pub fn add(self: Self, key: K, value: V) void {
+            c.CFDictionaryAddValue(self.ref, nativeRef(key), nativeRef(value));
+        }
+
+        /// Updates only when the key is present.
+        pub fn replace(self: Self, key: K, value: V) void {
+            c.CFDictionaryReplaceValue(self.ref, nativeRef(key), nativeRef(value));
+        }
+
+        pub fn remove(self: Self, key: K) void {
+            c.CFDictionaryRemoveValue(self.ref, nativeRef(key));
+        }
+
+        pub fn clear(self: Self) void {
+            c.CFDictionaryRemoveAllValues(self.ref);
+        }
+    };
 }
 
-pub fn createCopy(allocator: ?CFAllocator, dictionary: CFDictionary) error{OutOfMemory}!CFDictionary {
-    return c.CFDictionaryCreateCopy(allocator, dictionary) orelse error.OutOfMemory;
+fn nativeRef(value: anytype) c.CFTypeRef {
+    const ref: c.CFTypeRef = if (@typeInfo(@TypeOf(value)) == .@"struct")
+        @ptrCast(value.ref)
+    else
+        @ptrCast(value);
+    std.debug.assert(ref != null);
+    return ref;
 }
 
-pub fn createMutable(
-    allocator: ?CFAllocator,
-    capacity: usize,
-    key_callbacks: ?*const KeyCallBacks,
-    value_callbacks: ?*const ValueCallBacks,
-) error{ InputTooLong, OutOfMemory }!CFMutableDictionary {
-    return c.CFDictionaryCreateMutable(allocator, try toCFIndex(capacity), key_callbacks, value_callbacks) orelse error.OutOfMemory;
+fn wrap(comptime T: type, ref: c.CFTypeRef) T {
+    if (@typeInfo(T) == .@"struct") return T.fromRef(@ptrCast(@alignCast(@constCast(ref))));
+    return @ptrCast(@alignCast(@constCast(ref)));
 }
 
-pub fn createMutableCopy(allocator: ?CFAllocator, capacity: usize, dictionary: CFDictionary) error{ InputTooLong, OutOfMemory }!CFMutableDictionary {
-    return c.CFDictionaryCreateMutableCopy(allocator, try toCFIndex(capacity), dictionary) orelse error.OutOfMemory;
-}
+test "core_foundation CFDictionary: equality, ownership and entry conversion" {
+    const CFString = @import("CFString.zig");
+    const CFNumber = @import("CFNumber.zig");
+    const Dictionary = CFDictionary(CFString, CFNumber);
+    const dictionary = blk: {
+        const key = try CFString.init("weight");
+        defer key.deinit();
 
-pub fn getCount(dictionary: CFDictionary) CFIndex {
-    return c.CFDictionaryGetCount(dictionary);
-}
+        const equal_key = try CFString.init("weight");
+        defer equal_key.deinit();
 
-pub fn getCountOfKey(dictionary: CFDictionary, key: ?*const anyopaque) CFIndex {
-    return c.CFDictionaryGetCountOfKey(dictionary, key);
-}
+        const first = try CFNumber.init(@as(i32, 400));
+        defer first.deinit();
 
-pub fn getCountOfValue(dictionary: CFDictionary, value: ?*const anyopaque) CFIndex {
-    return c.CFDictionaryGetCountOfValue(dictionary, value);
-}
+        const last = try CFNumber.init(@as(i32, 700));
+        defer last.deinit();
 
-pub fn containsKey(dictionary: CFDictionary, key: ?*const anyopaque) bool {
-    return c.CFDictionaryContainsKey(dictionary, key) != 0;
-}
+        const original = try Dictionary.init(&.{
+            .{ .key = key, .value = first },
+            .{ .key = equal_key, .value = last },
+        });
+        defer original.deinit();
+        break :blk Dictionary.fromRef(original.ref).retain();
+    };
+    defer dictionary.deinit();
 
-pub fn containsValue(dictionary: CFDictionary, value: ?*const anyopaque) bool {
-    return c.CFDictionaryContainsValue(dictionary, value) != 0;
-}
+    const key = try CFString.init("weight");
+    defer key.deinit();
+    const missing = try CFString.init("missing");
+    defer missing.deinit();
 
-/// Returns null for a missing key or a stored null value.
-pub fn getValue(dictionary: CFDictionary, key: ?*const anyopaque) ?*const anyopaque {
-    return c.CFDictionaryGetValue(dictionary, key);
-}
+    try std.testing.expectEqual(@as(usize, 1), dictionary.len());
+    try std.testing.expect(dictionary.contains(key));
+    try std.testing.expect(!dictionary.contains(missing));
+    try std.testing.expect(dictionary.get(missing) == null);
+    try std.testing.expectEqual(@as(?i32, 700), dictionary.get(key).?.to(i32));
 
-/// Distinguishes a missing key from a stored null. The output pointer is optional.
-pub fn getValueIfPresent(dictionary: CFDictionary, key: ?*const anyopaque, value: ?*?*const anyopaque) bool {
-    return c.CFDictionaryGetValueIfPresent(dictionary, key, value) != 0;
-}
-
-/// Each supplied buffer must hold getCount() entries. Pair order is unspecified.
-pub fn getKeysAndValues(dictionary: CFDictionary, keys: ?[]?*const anyopaque, values: ?[]?*const anyopaque) void {
-    const count: usize = @intCast(getCount(dictionary));
-    if (keys) |buffer| std.debug.assert(buffer.len >= count);
-    if (values) |buffer| std.debug.assert(buffer.len >= count);
-    if (count == 0) return;
-    c.CFDictionaryGetKeysAndValues(
-        dictionary,
-        if (keys) |buffer| buffer.ptr else null,
-        if (values) |buffer| buffer.ptr else null,
-    );
-}
-
-pub fn applyFunction(dictionary: CFDictionary, applier: ApplierFunction, context: ?*anyopaque) void {
-    c.CFDictionaryApplyFunction(dictionary, applier, context);
-}
-
-/// Adds a pair only when the key is absent.
-pub fn addValue(dictionary: CFMutableDictionary, key: ?*const anyopaque, value: ?*const anyopaque) void {
-    c.CFDictionaryAddValue(dictionary, key, value);
-}
-
-/// Adds a pair or replaces the value of an existing key.
-pub fn setValue(dictionary: CFMutableDictionary, key: ?*const anyopaque, value: ?*const anyopaque) void {
-    c.CFDictionarySetValue(dictionary, key, value);
-}
-
-/// Replaces the value only when the key is present.
-pub fn replaceValue(dictionary: CFMutableDictionary, key: ?*const anyopaque, value: ?*const anyopaque) void {
-    c.CFDictionaryReplaceValue(dictionary, key, value);
-}
-
-pub fn removeValue(dictionary: CFMutableDictionary, key: ?*const anyopaque) void {
-    c.CFDictionaryRemoveValue(dictionary, key);
-}
-
-pub fn removeAllValues(dictionary: CFMutableDictionary) void {
-    c.CFDictionaryRemoveAllValues(dictionary);
+    const entries = try dictionary.toSlice(std.testing.allocator);
+    defer std.testing.allocator.free(entries);
+    try std.testing.expectEqual(@as(usize, 1), entries.len);
+    try std.testing.expect(entries[0].key.eq(key));
+    try std.testing.expectEqual(@as(?i32, 700), entries[0].value.to(i32));
+    try std.testing.expectEqual(Dictionary.getTypeID(), c.CFGetTypeID(dictionary.asCFTypeRef()));
 }
