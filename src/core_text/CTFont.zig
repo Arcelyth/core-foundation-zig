@@ -5,6 +5,7 @@ const c = @import("c");
 const cf = @import("../core_foundation.zig");
 const CTFontDescriptor = @import("CTFontDescriptor.zig");
 const SymbolicTraits = @import("types.zig").SymbolicTraits;
+const cg = @import("../core_graphics.zig");
 
 ref: c.CTFontRef,
 
@@ -39,6 +40,20 @@ pub fn initWithName(name: []const u8, size: f64) cf.CFString.StringError!CTFont 
 /// Creates a font from a descriptor. Zero preserves its size, or uses Core Text's default.
 pub fn initWithDescriptor(descriptor: CTFontDescriptor, size: f64) CTFont {
     return .fromRef(c.CTFontCreateWithFontDescriptor(descriptor.ref, size, null));
+}
+
+pub fn copyWithAttributes(
+    self: CTFont,
+    size: f64,
+    matrix: ?cg.geometry.CGAffineTransform,
+    attributes: ?CTFontDescriptor,
+) CTFont {
+    return .fromRef(c.CTFontCreateCopyWithAttributes(
+        self.ref,
+        size,
+        if (matrix) |*value| value else null,
+        if (attributes) |value| value.ref else null,
+    ));
 }
 
 /// Returns an owned descriptor.
@@ -107,6 +122,18 @@ pub fn getUnderlinePosition(self: CTFont) f64 {
 
 pub fn getUnderlineThickness(self: CTFont) f64 {
     return c.CTFontGetUnderlineThickness(self.ref);
+}
+
+/// Draws already-shaped glyphs at user-space positions.
+pub fn drawGlyphs(
+    self: CTFont,
+    glyphs: []const cg.types.CGGlyph,
+    positions: []const cg.geometry.CGPoint,
+    context: cg.CGContext,
+) error{LengthMismatch}!void {
+    if (glyphs.len != positions.len) return error.LengthMismatch;
+    if (glyphs.len == 0) return;
+    c.CTFontDrawGlyphs(self.ref, glyphs.ptr, positions.ptr, glyphs.len, context.ref);
 }
 
 test "core_text CTFont: construction, retain and descriptor" {
